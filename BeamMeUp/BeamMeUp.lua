@@ -826,6 +826,7 @@ local function OnAddOnLoaded(eventCode, addOnName)
     
     local anchorOnMap = not BMU_IsNotKeyboard()
     local showOpenButtonOnMap = not BMU_IsNotKeyboard()
+    local showHouseToursGamepad = not BMU_IsNotKeyboard()
 
     BMU.DefaultsAccount = {
 		["pos_MapScene_x"] = -15,
@@ -844,7 +845,7 @@ local function OnAddOnLoaded(eventCode, addOnName)
 		["hidePVP"] = true,
 		["hideClosedDungeons"] = true,
 		["hideHouses"] = false,
-		["showHouseTours"] = true,
+		["showHouseTours"] = showHouseToursGamepad,
 		["hideDelves"] = false,
 		["hidePublicDungeons"] = false,
 		["savedGold"] = 0,
