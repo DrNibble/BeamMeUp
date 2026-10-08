@@ -553,7 +553,8 @@ function BMU.createTable(args)
 			end
 		else
 			-- Listings are already deduplicated by houseId and pre-enriched with
-			-- all static derived fields at search time.
+			-- all static derived fields, in a background task (LibAsync, see
+			-- BMU.buildHouseToursCacheEntries) when the House Tours search completes.
 			-- This loop therefore only copies cached values:
 			-- no ESO API calls and no temporary table are created on each refresh.
 			local houseTourListings = BMU.houseTourListings
@@ -3076,9 +3077,15 @@ function BMU.onHouseTourSearchComplete(searchState, listingType)
         return
     end
 
+    -- Only the cheap raw listing data is collected here (deduplicated by
+    -- houseId, own houses and the player's own listings excluded). All ESO
+    -- API lookups needed for the static derived fields are done in the
+    -- background, spread over several frames via LibAsync, so the
+    -- search-complete callback does not block the frame (see
+    -- BMU.buildHouseToursCacheEntries).
     local myDisplayName = GetDisplayName()
     local ownedHouseIds = BMU.getOwnedHouseIdsForHouseTours()
-    local listings = {}
+    local rawListings = {}
     local seenHouseIds = {}
 
     for _, listingData in ipairs(results) do
@@ -3090,96 +3097,212 @@ function BMU.onHouseTourSearchComplete(searchState, listingType)
                 if not ownedHouseIds[houseId] and not seenHouseIds[houseId] then
                     seenHouseIds[houseId] = true
 
-                    local collectibleId = listingData:GetCollectibleId() or GetCollectibleIdForHouse(houseId)
-                    local houseZoneId = GetHouseZoneId(houseId)
-                    if not houseZoneId or houseZoneId == 0 then
-                        houseZoneId = 0
-                    end
-
-                    local parentZoneId = 0
-                    if houseZoneId ~= 0 then
-                        parentZoneId = BMU.getParentZoneId(houseZoneId) or 0
-                    end
-
-                    local houseTourParentZoneOverride = BMU.houseTourParentZoneOverrides[houseId]
-                    if houseTourParentZoneOverride then
-                        parentZoneId = houseTourParentZoneOverride
-                    end
-
-                    local houseName = listingData:GetHouseName() or ""
-                    local nickName = BMU_formatName(GetCollectibleNickname(collectibleId))
-                    local houseNameFormatted = (houseName ~= "" and houseName) or BMU_formatName(GetCollectibleDefaultNickname(collectibleId))
-
-                    local listing = {
-                        houseId              = houseId,
-                        ownerName            = ownerName,
-                        houseName            = houseName,
-                        collectibleId        = collectibleId,
-                        houseZoneId          = houseZoneId,
-                        parentZoneId         = parentZoneId,
-                        houseNameUnformatted = GetZoneNameById(houseZoneId),
-                        zoneName             = GetZoneNameById(parentZoneId),
-                        parentZoneName       = BMU_formatName(GetZoneNameById(parentZoneId)),
-                        houseNameFormatted   = houseNameFormatted,
-                        nickName             = nickName,
-                        mapIndex             = BMU_getMapIndex(houseZoneId),
-                        mapId                = GetMapIdByZoneId and GetMapIdByZoneId(parentZoneId) or nil,
-                        houseTourMapZoneId   = parentZoneId,
-                        houseTourMapId       = GetMapIdByZoneId and GetMapIdByZoneId(parentZoneId) or nil,
-                        houseTourContextZoneId = parentZoneId,
-                        houseTourPingX      = nil,
-                        houseTourPingZ      = nil,
-                        houseTooltip         = { houseNameFormatted, "\"" .. nickName .. "\"", BMU_colorizeText(ownerName, colorOrange) },
+                    rawListings[#rawListings + 1] = {
+                        houseId       = houseId,
+                        ownerName     = ownerName,
+                        houseName     = listingData:GetHouseName() or "",
+                        collectibleId = listingData:GetCollectibleId(),
                     }
-
-                    if houseTourParentZoneOverride then
-                        listing.mapIndex = BMU_getMapIndex(parentZoneId)
-                    end
-
-                    listing = BMU.applyHouseFixedMapData(listing)
-                    if houseId == 124 then
-                        listing.houseTourContextZoneId = 1283
-                        listing.parentZoneId = 1282
-                        listing.houseTourMapZoneId = 1283
-                        listing.houseTourMapId = 2119
-                        listing.zoneName = GetZoneNameById(1283)
-                        listing.parentZoneName = BMU_formatName(GetZoneNameById(1282))
-                        listing.houseTourDisplayZoneName = BMU_formatName(GetZoneNameById(1283))
-                        listing.houseTourDisplayParentZoneName = listing.parentZoneName
-                    end
-                    if houseId == 102 then
-                        listing.mapIndex = BMU_getMapIndex(981) or BMU_getMapIndex(980) or listing.mapIndex
-                        listing.mapId = listing.houseTourMapId
-                        listing.houseTourContextZoneId = 981
-                        listing.houseTourDisplayZoneName = BMU_formatName(GetZoneNameById(981))
-                        listing.houseTourDisplayParentZoneName = listing.houseTourDisplayZoneName
-                    end
-
-                    table.insert(listings, listing)
-
-                    if houseId == 102 then
-                        local worldMapListing = {}
-                        for k, v in pairs(listing) do
-                            worldMapListing[k] = v
-                        end
-                        worldMapListing.houseTourContextZoneId = 980
-                        worldMapListing.houseTourMapZoneId = 980
-                        worldMapListing.houseTourMapId = GetMapIdByZoneId and GetMapIdByZoneId(980) or nil
-                        worldMapListing.mapId = worldMapListing.houseTourMapId
-                        worldMapListing.mapIndex = BMU_getMapIndex(980) or worldMapListing.mapIndex
-                        worldMapListing.houseTourDisplayZoneName = BMU_formatName(GetZoneNameById(981))
-                        worldMapListing.houseTourDisplayParentZoneName = worldMapListing.houseTourDisplayZoneName
-                        worldMapListing.houseTourPingX = 0.4457
-                        worldMapListing.houseTourPingZ = 0.4160
-                        worldMapListing.housePingX = 0.4457
-                        worldMapListing.housePingZ = 0.4160
-                        table.insert(listings, worldMapListing)
-                    end
                 end
             end
         end
     end
 
+    -- Keep the "search in progress" state while the background enrichment
+    -- runs: RequestHouseTourSearch stays blocked until the build finishes
+    -- (released in BMU.buildHouseToursCacheEntries' finishBuild), so no
+    -- concurrent search can restart the batch chain mid-build.
+    BMU.houseTourSearchPending = true
+    BMU.houseTourSearchPendingType = HOUSE_TOURS_LISTING_TYPE_BROWSE
+    BMU.buildHouseToursCacheEntries(rawListings, #results, BMU.finishHouseTourSearch)
+end
+
+-- Compute all static derived fields for one raw House Tour listing and
+-- append the enriched entry (plus, for houseId 102, its world-map variant)
+-- to outListings. This is the House Tours equivalent of the own houses
+-- cache (BMU.createOwnHouseCacheEntry): the data is static for a login
+-- session, so it is computed once per search result instead of being
+-- recalculated on every list refresh. Protected: a single failing listing
+-- must not abort the whole build (the failing listing is skipped).
+function BMU.enrichHouseTourListing(rawListing, outListings)
+    local ok, err = pcall(function()
+        local houseId = rawListing.houseId
+        local collectibleId = rawListing.collectibleId or GetCollectibleIdForHouse(houseId)
+        local houseZoneId = GetHouseZoneId(houseId)
+        if not houseZoneId or houseZoneId == 0 then
+            houseZoneId = 0
+        end
+
+        local parentZoneId = 0
+        if houseZoneId ~= 0 then
+            parentZoneId = BMU.getParentZoneId(houseZoneId) or 0
+        end
+
+        local houseTourParentZoneOverride = BMU.houseTourParentZoneOverrides[houseId]
+        if houseTourParentZoneOverride then
+            parentZoneId = houseTourParentZoneOverride
+        end
+
+        local houseName = rawListing.houseName
+        local nickName = BMU_formatName(GetCollectibleNickname(collectibleId))
+        local houseNameFormatted = (houseName ~= "" and houseName) or BMU_formatName(GetCollectibleDefaultNickname(collectibleId))
+
+        local listing = {
+            houseId              = houseId,
+            ownerName            = rawListing.ownerName,
+            houseName            = houseName,
+            collectibleId        = collectibleId,
+            houseZoneId          = houseZoneId,
+            parentZoneId         = parentZoneId,
+            houseNameUnformatted = GetZoneNameById(houseZoneId),
+            zoneName             = GetZoneNameById(parentZoneId),
+            parentZoneName       = BMU_formatName(GetZoneNameById(parentZoneId)),
+            houseNameFormatted   = houseNameFormatted,
+            nickName             = nickName,
+            mapIndex             = BMU_getMapIndex(houseZoneId),
+            mapId                = GetMapIdByZoneId and GetMapIdByZoneId(parentZoneId) or nil,
+            houseTourMapZoneId   = parentZoneId,
+            houseTourMapId       = GetMapIdByZoneId and GetMapIdByZoneId(parentZoneId) or nil,
+            houseTourContextZoneId = parentZoneId,
+            houseTourPingX      = nil,
+            houseTourPingZ      = nil,
+            houseTooltip         = { houseNameFormatted, "\"" .. nickName .. "\"", BMU_colorizeText(rawListing.ownerName, colorOrange) },
+        }
+
+        if houseTourParentZoneOverride then
+            listing.mapIndex = BMU_getMapIndex(parentZoneId)
+        end
+
+        listing = BMU.applyHouseFixedMapData(listing)
+        if houseId == 124 then
+            listing.houseTourContextZoneId = 1283
+            listing.parentZoneId = 1282
+            listing.houseTourMapZoneId = 1283
+            listing.houseTourMapId = 2119
+            listing.zoneName = GetZoneNameById(1283)
+            listing.parentZoneName = BMU_formatName(GetZoneNameById(1282))
+            listing.houseTourDisplayZoneName = BMU_formatName(GetZoneNameById(1283))
+            listing.houseTourDisplayParentZoneName = listing.parentZoneName
+        end
+        if houseId == 102 then
+            listing.mapIndex = BMU_getMapIndex(981) or BMU_getMapIndex(980) or listing.mapIndex
+            listing.mapId = listing.houseTourMapId
+            listing.houseTourContextZoneId = 981
+            listing.houseTourDisplayZoneName = BMU_formatName(GetZoneNameById(981))
+            listing.houseTourDisplayParentZoneName = listing.houseTourDisplayZoneName
+        end
+
+        -- Build the optional world-map variant BEFORE inserting anything, so
+        -- an error while building it does not leave a half-published listing
+        -- (the pcall wrapper skips the whole listing on error).
+        local worldMapListing = nil
+        if houseId == 102 then
+            worldMapListing = {}
+            for k, v in pairs(listing) do
+                worldMapListing[k] = v
+            end
+            worldMapListing.houseTourContextZoneId = 980
+            worldMapListing.houseTourMapZoneId = 980
+            worldMapListing.houseTourMapId = GetMapIdByZoneId and GetMapIdByZoneId(980) or nil
+            worldMapListing.mapId = worldMapListing.houseTourMapId
+            worldMapListing.mapIndex = BMU_getMapIndex(980) or worldMapListing.mapIndex
+            worldMapListing.houseTourDisplayZoneName = BMU_formatName(GetZoneNameById(981))
+            worldMapListing.houseTourDisplayParentZoneName = worldMapListing.houseTourDisplayZoneName
+            worldMapListing.houseTourPingX = 0.4457
+            worldMapListing.houseTourPingZ = 0.4160
+            worldMapListing.housePingX = 0.4457
+            worldMapListing.housePingZ = 0.4160
+        end
+
+        table.insert(outListings, listing)
+        if worldMapListing then
+            table.insert(outListings, worldMapListing)
+        end
+    end)
+
+    if not ok then
+        BMU_printToChat("House Tours cache: house " .. tos(rawListing and rawListing.houseId) .. " could not be read: " .. tos(err), BMU.MSG_DB)
+    end
+end
+
+-- Enrich the raw House Tour listings in the background, via LibAsync, so
+-- neither the addon startup nor the search-complete callback is penalized
+-- (there can be several hundred listings, each requiring several ESO API
+-- calls). Mirrors the own houses cache build (BMU.startOwnHousesCacheBuild):
+-- the work is spread over several frames, a running enrichment task is
+-- cancelled and replaced when a new search completes, and the previous cache
+-- stays in use until the enriched entries are merged (see
+-- BMU.finishHouseTourSearch). Without LibAsync it falls back to a synchronous
+-- loop. Listings whose enrichment fails are skipped; the batch chain always
+-- continues so the game's House Tours filters are reliably restored.
+function BMU.buildHouseToursCacheEntries(rawListings, resultCount, onComplete)
+    local enrichedListings = {}
+
+    -- Generation guard: a cancelled task must never finalize the build of its
+    -- replacement (Cancel/Finally may still fire asynchronously), and the
+    -- finalization must run exactly once even if Then and OnError both fire
+    -- (e.g. when onComplete itself raises).
+    local generation = (BMU.houseTourCacheBuildGeneration or 0) + 1
+    BMU.houseTourCacheBuildGeneration = generation
+    local finished = false
+    local function finishBuild()
+        if finished or BMU.houseTourCacheBuildGeneration ~= generation then
+            return
+        end
+        finished = true
+        BMU.houseTourCacheBuilding = false
+        BMU.houseTourCacheBuildTask = nil
+        -- Release the "search in progress" state only now: while the
+        -- enrichment runs, RequestHouseTourSearch stays blocked so no
+        -- concurrent search can restart the batch chain (batch index, game
+        -- filters) in the middle of a build.
+        BMU.houseTourSearchPending = false
+        BMU.houseTourSearchPendingType = nil
+        onComplete(enrichedListings, resultCount)
+    end
+
+    if LibAsync then
+        if BMU.houseTourCacheBuildTask then
+            local oldTask = BMU.houseTourCacheBuildTask
+            BMU.houseTourCacheBuildTask = nil
+            -- Prevent the cancelled task's finalizer from completing the
+            -- merge with its (partial) results: the guard in finishBuild
+            -- checks this flag.
+            BMU.houseTourCacheBuilding = false
+            oldTask:Cancel()
+        end
+        BMU.houseTourCacheBuilding = true
+
+        local task = LibAsync:Create("BMU_HouseToursCache")
+        BMU.houseTourCacheBuildTask = task
+        task:For(ipairs(rawListings)):Do(function(_, rawListing)
+            BMU.enrichHouseTourListing(rawListing, enrichedListings)
+        end):Then(function()
+            finishBuild()
+        end):OnError(function()
+            -- LibAsync only calls the error handler when a step outside the
+            -- protected loop body failed: keep the flags consistent and still
+            -- complete the batch chain with the enriched entries.
+            finishBuild()
+        end):Finally(function()
+            if BMU.houseTourCacheBuilding then
+                finishBuild()
+            end
+        end)
+    else
+        -- No LibAsync available: enrich synchronously as a fallback.
+        for _, rawListing in ipairs(rawListings) do
+            BMU.enrichHouseTourListing(rawListing, enrichedListings)
+        end
+        finishBuild()
+    end
+end
+
+-- Merge the enriched listings into the House Tours cache (deduplicated by
+-- houseId + context zone, existing entries first), then advance the
+-- browse-filter batch chain: refresh the visible list, prepare the next
+-- batch or restore the filters on the last one.
+function BMU.finishHouseTourSearch(listings, batchResults)
     local mergedListings = {}
     local mergedKeys = {}
     local function addMergedListing(entry)
@@ -3210,7 +3333,7 @@ function BMU.onHouseTourSearchComplete(searchState, listingType)
     -- deterministic even when ESO delivers the search results asynchronously.
     local currentBatch = BMU.houseTourBrowseFilterBatchIndex or 1
     local batchCount = BMU.houseTourBrowseFilterBatchCount or 1
-    local batchResults = #results
+    batchResults = batchResults or 0
     local cacheEntries = #(BMU.houseTourListings or {})
     -- Batch output follows the Debug Mode only. It is intentionally independent
     -- of the optional diagnostic chat-command setting.

@@ -1,5 +1,26 @@
 # CHANGES
 
+## 2026.10.08 — House Tours : enrichissement du cache en tâche de fond
+
+### Objectif
+À la fin d'une recherche House Tours (BROWSE), le callback `onHouseTourSearchComplete` enrichissait chaque listing de façon synchrone (appels API ESO : zone de la maison, zone parente, noms formatés, surnom, index de carte, `applyHouseFixedMapData`, cas spéciaux 102/124...) ; avec plusieurs centaines de maisons, ce travail bloquait la frame. L'enrichissement est désormais exécuté en tâche de fond via LibAsync, sur le modèle du cache des maisons possédées.
+
+### Modifications
+- `BeamMeUp/core/TeleporterChecker.lua`
+  - `onHouseTourSearchComplete` ne collecte plus que les données brutes peu coûteuses (houseId, propriétaire, nom, collectibleId), avec les mêmes exclusions qu'avant (maisons possédées, doublons par houseId, propres listings du joueur).
+  - Nouvelles fonctions :
+    - `BMU.enrichHouseTourListing` : calcule tous les champs statiques d'un listing brut (identiques à l'ancien chemin, y compris la variante « world map » de la maison 102 et les remplacements de zone parente) ; protégée par pcall — un listing en échec est ignoré sans interrompre la construction.
+    - `BMU.buildHouseToursCacheEntries` : répartit l'enrichissement sur plusieurs frames via LibAsync (tâche `BMU_HouseToursCache`) ; une nouvelle recherche pendant l'enrichissement annule la tâche en cours (garde par génération : une tâche annulée ne peut jamais finaliser la construction de sa remplaçante, et la finalisation n'a lieu qu'une seule fois même si le rappel de fin échoue) ; sans LibAsync, repli synchrone.
+    - `BMU.finishHouseTourSearch` : fusion (déduplication houseId + zone de contexte, entrées existantes en premier) puis enchaînement des lots de filtre, comme avant.
+  - L'état « recherche en cours » (`houseTourSearchPending`) est maintenu pendant tout l'enrichissement : `RequestHouseTourSearch` reste bloqué, afin qu'aucune recherche concurrente ne puisse relancer la chaîne de lots (index de lot, filtres du jeu) en pleine construction ; il est libéré à la finalisation (ou sur les chemins d'erreur).
+  - Pour la maison 102, la variante « world map » est désormais construite avant l'insertion : une erreur pendant sa construction ignore la maison entière au lieu de publier une entrée incomplète.
+  - Le cache précédent reste utilisé tant que l'enrichissement n'est pas terminé ; la chaîne de lots se poursuit même si des listings échouent, afin que les filtres House Tours du jeu soient toujours restaurés.
+- `BeamMeUp/TeleporterGlobals.lua` : état de l'enrichissement en tâche de fond (`houseTourCacheBuilding`, `houseTourCacheBuildTask`, `houseTourCacheBuildGeneration`) et mise à jour du commentaire de `houseTourListings` (listings enrichis).
+- Commentaire de la section 5b de `BMU.createTable` mis à jour (enrichissement en tâche de fond).
+
+### Limites
+- Vérifié par analyse statique et tests automatisés avec API ESO simulées (enrichissement LibAsync réparti sur plusieurs frames, publication, blocage des recherches concurrentes pendant la construction, annulation d'une tâche en cours avec publication exacte des résultats de la nouvelle tâche, transition entre lots, erreur dans la finalisation sans double finalisation, repli synchrone sans LibAsync, exclusions/déduplication, cas 102/124, erreur par listing ignorée) ; non testé en jeu. Les tests avec ordonnanceur simulé valident l'enchaînement des opérations, pas une mesure de performance en frames.
+
 ## 2026.10.08 — Optimisation de l'affichage des maisons
 
 ### Objectif
