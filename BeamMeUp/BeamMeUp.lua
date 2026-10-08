@@ -131,6 +131,10 @@ end
 
 
 local function PlayerInitAndReady()
+    -- Build the own houses cache in the background (LibAsync) so the housing
+    -- APIs are not called for every owned house on every list refresh,
+    -- without penalizing the addon startup time.
+    BMU.startOwnHousesCacheBuild()
     zo_callLater(function() alertTeleporterLoaded() end, 1500)
 end
 
@@ -1055,6 +1059,18 @@ local function OnAddOnLoaded(eventCode, addOnName)
             BMU.onHouseTourSearchComplete(searchState, listingType)
         end)
     end
+
+    -- Own houses cache: rebuild it in the background when the collection or a
+    -- house collectible changes. According to the game's collectible data
+    -- manager (esoui/ingame/collections/collectibledatamanager.lua):
+    -- EVENT_COLLECTIBLE_UPDATED -> nickname change, active/inactive;
+    -- EVENT_COLLECTIBLES_UNLOCK_STATE_CHANGED -> unlock state changes
+    --   (purchases, rewards: e.g. buying a house);
+    -- EVENT_COLLECTION_UPDATED -> full collection refresh.
+    -- The debounced handler coalesces all three into one background rebuild.
+    EM:RegisterForEvent(appName, EVENT_COLLECTIBLE_UPDATED, BMU.onCollectibleUpdatedForHouseCache)
+    EM:RegisterForEvent(appName, EVENT_COLLECTIBLES_UNLOCK_STATE_CHANGED, BMU.onCollectibleUpdatedForHouseCache)
+    EM:RegisterForEvent(appName, EVENT_COLLECTION_UPDATED, BMU.onCollectibleUpdatedForHouseCache)
 end
 
 

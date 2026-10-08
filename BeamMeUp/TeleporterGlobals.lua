@@ -141,6 +141,14 @@ BMU.houseTourListings = nil              -- raw listings [{ houseId, ownerName, 
 BMU.houseTourSearchPending = false       -- true while a House Tours search is in progress
 BMU.houseTourFallbackByParentZoneId = {} -- cache: [parentZoneId] = listingData OR false (if there is no result)
 
+-- Own houses cache (built in the background at startup via LibAsync,
+-- see TeleporterChecker.lua, BMU.startOwnHousesCacheBuild)
+BMU.ownHousesCache = nil                 -- array of static own-house entries; nil while not (yet) built
+BMU.ownHousesCacheBuilding = false       -- true while the background build is running
+BMU.ownHousesCacheBuildTask = nil        -- LibAsync task of the running build, if any
+BMU.ownHousesCacheRebuildPending = false -- debounce flag for EVENT_COLLECTIBLE_UPDATED rebuilds
+BMU.ownHousesCacheRebuildQueued = false  -- true when a rebuild was requested during a running build
+
 -- House Tour homes whose ESO zone association is incorrect.
 -- Values are the correct geographical parent zone IDs.
 BMU.houseTourParentZoneOverrides = {
