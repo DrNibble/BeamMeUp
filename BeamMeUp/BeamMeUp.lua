@@ -1058,6 +1058,17 @@ local function OnAddOnLoaded(eventCode, addOnName)
         HOUSE_TOURS_SEARCH_MANAGER:RegisterCallback("OnSearchStateChanged", function(searchState, listingType)
             BMU.onHouseTourSearchComplete(searchState, listingType)
         end)
+
+        -- House Tours: start the initial BROWSE search at addon load so the
+        -- listings cache is filled in the background while the player logs
+        -- in, instead of waiting for the first list refresh. The search runs
+        -- on the server, and the enrichment of its results happens in the
+        -- background via LibAsync (BMU.buildHouseToursCacheEntries), so the
+        -- startup time is not penalized; refreshListAuto is a no-op while the
+        -- teleporter window is hidden.
+        if BMU.savedVarsAcc.showHouseTours then
+            BMU.RequestHouseTourSearch()
+        end
     end
 
     -- Own houses cache: rebuild it in the background when the collection or a

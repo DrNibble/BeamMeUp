@@ -1,5 +1,19 @@
 # CHANGES
 
+## 2026.10.08 — House Tours : recherche initiale au chargement de l'addon
+
+### Objectif
+Le cache House Tours ne démarrait qu'au premier rafraîchissement de la liste (section 5b de `BMU.createTable` déclenchant `RequestHouseTourSearch`). La recherche initiale est désormais lancée dès le chargement de l'addon.
+
+### Modifications
+- `BeamMeUp/BeamMeUp.lua` (`OnAddOnLoaded`, après l'enregistrement du rappel de recherche House Tours) : si le paramètre `showHouseTours` est activé, appel direct de `BMU.RequestHouseTourSearch()`.
+  - La recherche s'exécute côté serveur ; l'enrichissement des résultats reste en tâche de fond via LibAsync (`BMU.buildHouseToursCacheEntries`), donc le temps de démarrage n'est pas pénalisé.
+  - `refreshListAuto` est sans effet tant que la fenêtre du téléporteur est cachée (garde existante), donc les rafraîchissements déclenchés par l'arrivée des résultats sont inoffensifs pendant la connexion.
+  - Les garde-fous existants s'appliquent : `RequestHouseTourSearch` ignore les appels redondants (état « recherche en cours »), et le paramètre `showHouseTours` désactivé ne lance aucune recherche.
+
+### Limites
+- Vérifié par analyse statique et test automatisé avec API ESO simulées (lancement initial, absence de recherche dupliquée, remplissage en tâche de fond, libération de l'état) ; non testé en jeu.
+
 ## 2026.10.08 — House Tours : enrichissement du cache en tâche de fond
 
 ### Objectif
