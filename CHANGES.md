@@ -1,5 +1,27 @@
 # CHANGES
 
+## 2026.10.08 — Timing checkpoints for the LibAsync cache builds
+
+### Goal
+Verify the latency gain of using LibAsync for the background cache builds, in game.
+
+### Changes
+- `BeamMeUp/core/TeleporterChecker.lua`
+  - New timing helpers (file-local, shared by both background builds):
+    - `createCacheBuildStats` / `timeCacheBuildStep` / `logCacheBuildStats`.
+  - Both LibAsync builds now measure, per build:
+    - `workMs`: accumulated time actually spent inside the build steps;
+    - `maxStepMs`: longest single step — with LibAsync this is (close to) the per-frame cost, while the synchronous fallback blocks ONE frame for the whole `workMs`;
+    - `totalMs`: wall-clock time from build start to finalization;
+    - plus `entries` (published rows), `steps` (items processed) and `async` (build mode).
+  - The numbers are always stored on `BMU` for programmatic checks (`BMU.ownHousesCacheStats`, `BMU.houseTourCacheStats`) and printed to chat in Debug Mode (`BMU.debugMode`), e.g.:
+    `[BMU <version> HouseToursCache] LibAsync: 412 entries in 413 steps, work 380.42 ms (max step 1.85 ms), total 4120.00 ms`.
+  - The synchronous fallback measures the same numbers, so both modes can be compared directly (the fallback's `totalMs` ≈ its `workMs`, all in one frame).
+- Instrumented: own houses cache build (`BMU.startOwnHousesCacheBuild`, task `BMU_OwnHousesCache`) and House Tours enrichment (`BMU.buildHouseToursCacheEntries`, task `BMU_HouseToursCache`), in both the LibAsync path and the synchronous fallback.
+
+### Limits
+- Verified through static analysis and automated tests with simulated ESO APIs (stats stored, fields consistent with the build, debug line logged, own houses build and synchronous fallback covered); not tested in game. The in-simulator timings validate the checkpoints, not real-world performance.
+
 ## 2026.10.08 — House Tours: initial search at addon load
 
 ### Goal

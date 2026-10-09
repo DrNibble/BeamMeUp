@@ -2722,6 +2722,69 @@ function BMU.createOwnHouseCacheEntry(houseId)
     }
 end
 
+--------------------------------------------------------------------------
+-- Timing checkpoints for the background cache builds (LibAsync)
+--
+-- Both background builds (own houses cache, House Tours cache) measure how
+-- long the actual work takes and how it is distributed, so the LibAsync gain
+-- can be verified in game:
+--   - workMs:    accumulated time actually spent inside the build steps;
+--   - maxStepMs: longest single step — with LibAsync this is (close to) the
+--                per-frame cost, while the synchronous fallback blocks ONE
+--                frame for the whole workMs;
+--   - totalMs:   wall-clock time from build start to finalization.
+-- The numbers are always stored on BMU (BMU.ownHousesCacheStats /
+-- BMU.houseTourCacheStats) for programmatic checks, and printed to chat in
+-- Debug Mode (BMU.debugMode).
+--------------------------------------------------------------------------
+
+local function createCacheBuildStats()
+    return {
+        startedAt = GetGameTimeSeconds(),
+        entries = 0,    -- enriched entries (published result rows)
+        steps = 0,      -- build steps executed (one per item)
+        workMs = 0,     -- accumulated time spent inside the steps
+        maxStepMs = 0,   -- longest single step
+        totalMs = nil,   -- wall-clock time from build start to finalization
+        async = nil,     -- true when the build ran via LibAsync
+    }
+end
+
+-- Time one build step (a function without arguments). Returns whatever the
+-- step returns.
+local function timeCacheBuildStep(stats, step)
+    local stepStart = GetGameTimeSeconds()
+    local a, b, c = step()
+    local stepMs = (GetGameTimeSeconds() - stepStart) * 1000
+    stats.steps = stats.steps + 1
+    stats.workMs = stats.workMs + stepMs
+    if stepMs > stats.maxStepMs then
+        stats.maxStepMs = stepMs
+    end
+    return a, b, c
+end
+
+-- Finalize the stats (wall-clock time + build mode) and print them in Debug
+-- Mode. Returns the stats table.
+local function logCacheBuildStats(stats, chatLabel)
+    stats.totalMs = (GetGameTimeSeconds() - stats.startedAt) * 1000
+    stats.async = (LibAsync ~= nil)
+    if BMU.debugMode then
+        d(string.format(
+            "[BMU %s %s] %s: %d entries in %d steps, work %.2f ms (max step %.2f ms), total %.2f ms",
+            tostring(teleporterVars.version or "?"),
+            chatLabel,
+            stats.async and "LibAsync" or "synchronous fallback",
+            stats.entries,
+            stats.steps,
+            stats.workMs,
+            stats.maxStepMs,
+            stats.totalMs
+        ))
+    end
+    return stats
+end
+
 -- Build the own houses cache. Runs in the background via LibAsync so the
 -- startup is not penalized. Without LibAsync it falls back to a synchronous
 -- build (only the owned houses are iterated, so the cost stays small).
@@ -2729,6 +2792,10 @@ end
 -- displayed list never shows a partially built database.
 function BMU.startOwnHousesCacheBuild()
     local houseIds = BMU.getOwnedHouseIdsArray()
+
+    -- Timing checkpoints (see "Timing checkpoints" section above): the
+    -- numbers are stored on BMU.ownHousesCacheStats and logged in Debug Mode.
+    local stats = createCacheBuildStats()
 
     -- Collect one cache entry, protected: a single failing house must not
     -- abort the whole build (the failing house is skipped and the build is
@@ -2749,6 +2816,8 @@ function BMU.startOwnHousesCacheBuild()
             -- Only publish the cache if the whole build succeeded.
             BMU.ownHousesCache = cache
         end
+        stats.entries = #cache
+        BMU.ownHousesCacheStats = logCacheBuildStats(stats, "OwnHousesCache")
         BMU.ownHousesCacheBuilding = false
         BMU.ownHousesCacheBuildTask = nil
         -- If a rebuild was requested while this build was running (e.g. a
@@ -2774,7 +2843,9 @@ function BMU.startOwnHousesCacheBuild()
         local task = LibAsync:Create("BMU_OwnHousesCache")
         BMU.ownHousesCacheBuildTask = task
         task:For(ipairs(houseIds)):Do(function(_, houseId)
-            collectEntry(cache, houseId)
+            timeCacheBuildStep(stats, function()
+                collectEntry(cache, houseId)
+            end)
         end):Then(function()
             finishBuild(cache)
         end):OnError(function()
@@ -2790,7 +2861,9 @@ function BMU.startOwnHousesCacheBuild()
         -- No LibAsync available: build synchronously as a fallback.
         local cache = {}
         for _, houseId in ipairs(houseIds) do
-            collectEntry(cache, houseId)
+            timeCacheBuildStep(stats, function()
+                collectEntry(cache, houseId)
+            end)
         end
         finishBuild(cache)
     end
@@ -3238,6 +3311,10 @@ end
 function BMU.buildHouseToursCacheEntries(rawListings, resultCount, onComplete)
     local enrichedListings = {}
 
+    -- Timing checkpoints (see "Timing checkpoints" section above): the
+    -- numbers are stored on BMU.houseTourCacheStats and logged in Debug Mode.
+    local stats = createCacheBuildStats()
+
     -- Generation guard: a cancelled task must never finalize the build of its
     -- replacement (Cancel/Finally may still fire asynchronously), and the
     -- finalization must run exactly once even if Then and OnError both fire
@@ -3250,6 +3327,8 @@ function BMU.buildHouseToursCacheEntries(rawListings, resultCount, onComplete)
             return
         end
         finished = true
+        stats.entries = #enrichedListings
+        BMU.houseTourCacheStats = logCacheBuildStats(stats, "HouseToursCache")
         BMU.houseTourCacheBuilding = false
         BMU.houseTourCacheBuildTask = nil
         -- Release the "search in progress" state only now: while the
@@ -3276,7 +3355,9 @@ function BMU.buildHouseToursCacheEntries(rawListings, resultCount, onComplete)
         local task = LibAsync:Create("BMU_HouseToursCache")
         BMU.houseTourCacheBuildTask = task
         task:For(ipairs(rawListings)):Do(function(_, rawListing)
-            BMU.enrichHouseTourListing(rawListing, enrichedListings)
+            timeCacheBuildStep(stats, function()
+                BMU.enrichHouseTourListing(rawListing, enrichedListings)
+            end)
         end):Then(function()
             finishBuild()
         end):OnError(function()
@@ -3292,7 +3373,9 @@ function BMU.buildHouseToursCacheEntries(rawListings, resultCount, onComplete)
     else
         -- No LibAsync available: enrich synchronously as a fallback.
         for _, rawListing in ipairs(rawListings) do
-            BMU.enrichHouseTourListing(rawListing, enrichedListings)
+            timeCacheBuildStep(stats, function()
+                BMU.enrichHouseTourListing(rawListing, enrichedListings)
+            end)
         end
         finishBuild()
     end
