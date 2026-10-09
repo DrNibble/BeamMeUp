@@ -1,5 +1,20 @@
 # CHANGES
 
+## 2026.10.08 — LibAsync becomes a pure optional dependency
+
+### Goal
+LibAsync was embedded in the addon (`lib/LibAsync/`) as a fallback copy. It is now a pure optional external dependency: the embedded copy is removed, and the startup verifies that a standalone LibAsync is present and loaded before BeamMeUp.
+
+### Changes
+- Removed the embedded library: `BeamMeUp/lib/LibAsync/` deleted, and the `lib/LibAsync/LibAsync.lua` entry removed from `BeamMeUp.addon.template` and `BeamMeUp/BeamMeUp.addon`. `LibAsync` remains in `OptionalDependsOn`, so ESO loads a standalone LibAsync BEFORE BeamMeUp when it is installed.
+- `BeamMeUp/core/TeleporterChecker.lua`: new `BMU.checkLibAsyncLoaded()` — returns true when LibAsync was found; otherwise prints a localized chat hint (always visible, once at startup) explaining that LibAsync should be installed as a standalone addon loaded before BeamMeUp, and that the background caches fall back to a synchronous build (lists stay correct, startup frames busier).
+- `BeamMeUp/BeamMeUp.lua` (`OnAddOnLoaded`): the check runs right after `BMU.GetLibraries()`.
+- New localization string `SI_TELE_CHAT_LIBASYNC_MISSING` added to all 10 languages (EN, DE, FR, ES, IT, BR, PL, RU, JP, ZH).
+- Code paths unchanged otherwise: every LibAsync consumer already had a synchronous fallback (own houses cache, House Tours enrichment), so nothing changes for users who keep LibAsync installed; without it, everything still works synchronously.
+
+### Limits
+- Verified through static analysis and automated tests with simulated ESO APIs (check returns true/false, hint printed exactly once without LibAsync, no hint with LibAsync); not tested in game.
+
 ## 2026.10.08 — Tooltip on the house name
 
 ### Goal

@@ -2775,6 +2775,22 @@ local function logCacheBuildStats(stats, chatLabel)
     return stats
 end
 
+-- Startup check (called from BeamMeUp.lua's OnAddOnLoaded): LibAsync is an
+-- optional dependency and must be loaded BEFORE BeamMeUp (see
+-- OptionalDependsOn in the addon manifest) so the background caches can be
+-- built without blocking the startup frames. Without it, both background
+-- caches fall back to a synchronous build: the lists stay correct, but the
+-- startup frames are busier. Returns true when LibAsync was found.
+function BMU.checkLibAsyncLoaded()
+    if LibAsync ~= nil then
+        return true
+    end
+
+    -- No message type: the hint is always printed (once, at startup).
+    BMU_printToChat(BMU_SI_Get(SI_TELE_CHAT_LIBASYNC_MISSING))
+    return false
+end
+
 -- Build the own houses cache. Runs in the background via LibAsync so the
 -- startup is not penalized. Without LibAsync it falls back to a synchronous
 -- build (only the owned houses are iterated, so the cost stays small).

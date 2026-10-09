@@ -810,6 +810,12 @@ local function OnAddOnLoaded(eventCode, addOnName)
 	--Libraries
 	BMU.GetLibraries() --Check if any BMU.* library variable needs an update
 
+	-- LibAsync (optional dependency): verify it was loaded BEFORE BeamMeUp (see
+	-- OptionalDependsOn in the addon manifest), so the background caches are
+	-- built without blocking the startup frames. Without it they fall back to
+	-- a synchronous build; a chat hint is printed once at startup.
+	BMU.checkLibAsyncLoaded()
+
 	--Read the addon version from the addon's txt manifest file tag ##AddOnVersion
 	local function GetAddonVersionFromManifest()
 		local addOn_Name

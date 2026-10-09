@@ -30,8 +30,6 @@ Console/lib/LibZone/LibZone_GeoData.lua
 GuildData.lua
 TeleporterGlobals.lua
 
-## LibAsync (vendored; only loads if no standalone LibAsync is installed)
-lib/LibAsync/LibAsync.lua
 
 ## Gamepad
 Gamepad/i18n/en.lua
