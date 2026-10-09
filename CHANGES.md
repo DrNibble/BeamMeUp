@@ -1,5 +1,19 @@
 # CHANGES
 
+## 2026.10.08 — Tooltip on the house name
+
+### Goal
+House entries showed their tooltip only on the zone-name column. The displayed house/owner name now has its own tooltip.
+
+### Changes
+- `BeamMeUp/core/List.lua` (`ListView:update`, house branch `message.houseId ~= nil`):
+  - `OnMouseEnter` / `OnMouseExit` handlers on `ColumnPlayerNameTex` (the overlay of the displayed house name), following the existing player-name tooltip pattern: the content is the entry's existing `message.houseTooltip` (house name + nickname for own houses; house name + nickname + colorized owner for House Tours; rich content in the Houses tab: zone, nickname, parent zone, icon, category, furniture count).
+  - The tooltip text is linked to the control (`tooltipText`) so it follows the same refresh-on-scroll path as the other tooltips, and pauses auto-refresh while hovered.
+  - Entries without a `houseTooltip` keep the previous behavior (no handlers).
+
+### Limits
+- Verified through static analysis (pattern identical to the player-name tooltip, same data source as the zone-name tooltip); the list row rendering is not covered by the automated ESO-API test harness and was not tested in game.
+
 ## 2026.10.08 — Timing checkpoints for the LibAsync cache builds
 
 ### Goal
