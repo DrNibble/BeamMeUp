@@ -155,17 +155,6 @@ local guildTraderOnwershipHeaderStr = GetString(SI_GUILD_TRADER_OWNERSHIP_HEADER
 local bankIconStr20                 = BMU_textures["bankStr20"]
 -- -^- INS251229 Baertram END 0
 
--- function BMU.ResetHouseTourSearchParameters()
-    -- if not HOUSE_TOURS_SEARCH_MANAGER then
-        -- return
-    -- end
-
-	-- local filters = HOUSE_TOURS_SEARCH_MANAGER:GetSearchFilters(HOUSE_TOURS_LISTING_TYPE_BROWSE)
-	-- if filters then
-		-- filters:ResetFilters()
-	-- end
--- end
-
 -- format zone name and removes articles (if enabled)
 function BMU.formatName(unformatted, flag)
 
@@ -190,19 +179,20 @@ function BMU.formatName(unformatted, flag)
 			end
 
 		elseif BMU.lang == "de" or BMU.lang == "fr" then
-			if string_match(unformatted, ".*^") ~= nil then
-				-- remove German and French articles
-				formatted = string_match(unformatted, ".*^")
-				-- and cut last character
-				if formatted ~= nil then
-					formatted = string_sub(formatted, 1, -2)
-				else
-					formatted = ""
-				end
-			else
-				-- nothing to format (DE, FR)
-				formatted = unformatted
-			end
+		formatted = zo_strformat(SI_WORLD_MAP_LOCATION_NAME, unformatted)
+			-- if string_match(unformatted, ".*^") ~= nil then
+				-- -- remove German and French articles
+				-- formatted = string_match(unformatted, ".*^")
+				-- -- and cut last character
+				-- if formatted ~= nil then
+					-- formatted = string_sub(formatted, 1, -2)
+				-- else
+					-- formatted = ""
+				-- end
+			-- else
+				-- -- nothing to format (DE, FR)
+				-- formatted = unformatted
+			-- end
 
 		else
 			-- unsupported language -> use game format
