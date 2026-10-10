@@ -1,5 +1,24 @@
 # CHANGES
 
+## 2026.10.10 — Removed `pcall` from `TeleporterChecker.lua`
+
+### Goal
+Per maintainer request, remove the `pcall` protective wrappers from `BeamMeUp/core/TeleporterChecker.lua` so errors surface to ESO's error handler / LibAsync's own error protection instead of being silently swallowed by the addon.
+
+### Changes
+- `BeamMeUp/core/TeleporterChecker.lua` — removed all 12 `pcall` sites:
+  - `BMU.getNumSetCollectionProgressPieces`: removed the LibSets "can-you-call" probes. The LibSets call is now direct, guarded by the existing `if BMU.LibSets and ...` type check. The parent-zone fallback (delves / public dungeons) is unchanged.
+  - `BMU.startOwnHousesCacheBuild` / `collectEntry`: `BMU.createOwnHouseCacheEntry` is called directly. An error aborts the LibAsync loop; LibAsync's own `pcall` then runs the `OnError`/`Finally` handlers (kept as-is, they set `buildFailed` and never publish a partial cache).
+  - `BMU.getAllHouseTourHouseIds`: `ZO_COLLECTIBLE_DATA_MANAGER:GetAllCollectibleDataObjects`, `COLLECTIONS_BOOK_SINGLETON.GetAllCollectibleDataObjects`, and `house.GetReferenceId` are called directly. The `type(...) == "function"` guards and the singleton fallback chain are unchanged.
+  - `BMU.setHouseTourHouseIdFilters`: bulk / clear / add filter methods are called directly. The `result ~= false` acceptance checks and the bulk → clear+add → fail fallback chain are unchanged.
+  - `BMU.enrichHouseTourListing`: removed the `pcall(function() ... end)` wrapper and the `if not ok then BMU_printToChat(...) end` branch. The body is dedented one level. An error propagates to LibAsync, which aborts the remaining loop and runs the existing `OnError`/`Finally` handlers (finalize the build and restore the game's House Tours filters with the listings enriched so far).
+- Removed the corresponding "protected by pcall" comments and updated the function-level doc comments.
+
+### Limits
+- The synchronous fallback (no LibAsync) path is now unprotected: if `enrichHouseTourListing` raises, `finishBuild` never runs and `houseTourSearchPending` stays true for the session (House Tours search blocked until reload). This is the accepted trade-off of removing `pcall`; the LibAsync path (recommended) is still protected by LibAsync's own error handling.
+- LibAsync 3.1.5's internal `runProtectedCall` was verified to call `OnError`/`Finally` on a raised step error and clear the callstack.
+- Not tested in game; verified by syntax check and an offline ESO-simulated test harness (all paths pass).
+
 ## 2026.10.08 — LibAsync becomes a pure optional dependency
 
 ### Goal

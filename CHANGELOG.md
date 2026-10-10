@@ -1,3 +1,6 @@
+## 2026.10.10
+- Internal: removed all `pcall` protective wrappers from `TeleporterChecker.lua` (LibSets probes, own-houses cache builder, House Tours collectible/manager probes, House Tours filter methods, per-listing enrichment). Errors now surface to ESO's error handler and, in the LibAsync background builds, to LibAsync's own error handling (OnError/Finally still abort the batch and restore the game's House Tours filters). Behavior is unchanged when no error occurs.
+
 ## 2026.10.08
 - LibAsync is now a pure optional external dependency: the embedded copy (`lib/LibAsync/`) was removed and `LibAsync` stays in `OptionalDependsOn` (a standalone LibAsync is loaded before BeamMeUp when installed). At startup BeamMeUp verifies its presence and prints a localized chat hint if it is missing — everything still works via the synchronous fallbacks, but the background caches build in one frame. Install the standalone LibAsync addon to keep the background builds spread over several frames.
 - Tooltip on the house name: hovering the displayed house/owner name now shows the house tooltip (house name and nickname for own houses, plus the owner for House Tours; rich content in the Houses tab with icon, category and furniture count). It was previously only shown on the zone-name column. The tooltip follows the list on scroll and pauses auto-refresh while hovered.
