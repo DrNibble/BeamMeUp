@@ -3225,7 +3225,6 @@ function BMU.enrichHouseTourListing(rawListing, outListings)
         local houseName = rawListing.houseName
         local nickName = BMU_formatName(GetCollectibleNickname(collectibleId))
         local houseNameFormatted = BMU_formatName((houseName ~= "" and houseName) or GetCollectibleDefaultNickname(collectibleId))
-        --local houseNameFormatted = BMU_formatName(houseNameFormatted)
 
         local listing = {
             houseId              = houseId,
