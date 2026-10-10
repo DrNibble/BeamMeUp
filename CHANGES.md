@@ -6,7 +6,7 @@
 Per maintainer request, remove the `pcall` protective wrappers from `BeamMeUp/core/TeleporterChecker.lua` so errors surface to ESO's error handler / LibAsync's own error protection instead of being silently swallowed by the addon.
 
 ### Changes
-- `BeamMeUp/core/TeleporterChecker.lua` — removed all 10 `pcall` call sites (the 12 textual matches were 10 calls + 2 comments):
+- `BeamMeUp/core/TeleporterChecker.lua` — removed all 10 `pcall` calls:
   - `BMU.getNumSetCollectionProgressPieces`: removed the LibSets "can-you-call" probes. The LibSets call is now direct, guarded by the existing `if BMU.LibSets and ...` type check. The parent-zone fallback (delves / public dungeons) is unchanged.
   - `BMU.startOwnHousesCacheBuild` / `collectEntry`: `BMU.createOwnHouseCacheEntry` is called directly. An error aborts the LibAsync loop; LibAsync's own `pcall` then runs the `OnError`/`Finally` handlers (kept as-is, they set `buildFailed` and never publish a partial cache).
   - `BMU.getAllHouseTourHouseIds`: `ZO_COLLECTIBLE_DATA_MANAGER:GetAllCollectibleDataObjects`, `COLLECTIONS_BOOK_SINGLETON.GetAllCollectibleDataObjects`, and `house.GetReferenceId` are called directly. The original `ZO_COLLECTIBLE_DATA_MANAGER and ZO_CollectibleCategoryData and ZO_CollectibleData` guards are preserved, now combined with the `type(...) == "function"` method check; the singleton fallback chain is unchanged.
@@ -17,8 +17,7 @@ Per maintainer request, remove the `pcall` protective wrappers from `BeamMeUp/co
 ### Limits
 - The synchronous fallback (no LibAsync) path is now unprotected: if `enrichHouseTourListing` raises, `finishBuild` never runs and `houseTourSearchPending` stays true for the session (House Tours search blocked until reload). The user asked for `pcall` to be removed, which makes this a known regression on that path, not a silently accepted trade-off; the LibAsync path (recommended) is still protected by LibAsync's own error handling.
 - LibAsync 3.1.5's internal `runProtectedCall` was verified to call `OnError`/`Finally` on a raised step error and clear the callstack.
-- Not tested in game; verified by a syntax check (file loads as a Lua chunk) and an offline ESO-simulated test harness run under Lua 5.5 (ESO is Lua 5.1). The harness validates the modified code paths; it does not substitute for in-game testing.
-- The harness currently exercises `getAllHouseTourHouseIds` via the singleton fallback path (the `pairs` loop over `allHouses` uses the pre-existing `for _, house in pairs` idiom, which Lua 5.5 rejects with `_` as a const).
+- Not tested in game; verified by compiling and executing an adapted copy of the file under Lua 5.5 in an offline ESO-simulated test harness (ESO is Lua 5.1, so the harness applies a small pre-existing-idiom shim for the Lua 5.5 runtime; the shipped file itself is unchanged in those idioms). This validates the modified code paths; it does not substitute for in-game testing.
 
 ## 2026.10.08 — LibAsync becomes a pure optional dependency
 
