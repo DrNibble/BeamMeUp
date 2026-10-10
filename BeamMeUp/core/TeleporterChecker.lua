@@ -2797,9 +2797,9 @@ function BMU.startOwnHousesCacheBuild()
     -- numbers are stored on BMU.ownHousesCacheStats and logged in Debug Mode.
     local stats = createCacheBuildStats()
 
-    -- Collect one cache entry, protected: a single failing house must not
-    -- abort the whole build (the failing house is skipped and the build is
-    -- only published if no error occurred).
+    -- Collect one cache entry. An error inside a house entry aborts the
+    -- build: LibAsync's own error protection runs the OnError/Finally
+    -- handlers, which keep buildFailed set and do not publish the cache.
     local buildFailed = false
     local function collectEntry(cache, houseId)
         local entry = BMU.createOwnHouseCacheEntry(houseId)
@@ -2897,7 +2897,7 @@ function BMU.getAllHouseTourHouseIds()
     local seen = {}
     local allHouses = nil
 
-    if ZO_COLLECTIBLE_DATA_MANAGER and type(ZO_COLLECTIBLE_DATA_MANAGER.GetAllCollectibleDataObjects) == "function" then
+    if ZO_COLLECTIBLE_DATA_MANAGER and ZO_CollectibleCategoryData and ZO_CollectibleData and type(ZO_COLLECTIBLE_DATA_MANAGER.GetAllCollectibleDataObjects) == "function" then
         local result = ZO_COLLECTIBLE_DATA_MANAGER:GetAllCollectibleDataObjects(
             { ZO_CollectibleCategoryData.IsHousingCategory }
         )
@@ -3293,8 +3293,10 @@ end
 -- cancelled and replaced when a new search completes, and the previous cache
 -- stays in use until the enriched entries are merged (see
 -- BMU.finishHouseTourSearch). Without LibAsync it falls back to a synchronous
--- loop. Listings whose enrichment fails are skipped; the batch chain always
--- continues so the game's House Tours filters are reliably restored.
+-- loop. An error inside a listing aborts the remaining loop: LibAsync's
+-- own error protection runs the OnError/Finally handlers, which finalize the
+-- build and restore the game's House Tours filters with the listings
+-- enriched so far.
 function BMU.buildHouseToursCacheEntries(rawListings, resultCount, onComplete)
     local enrichedListings = {}
 
